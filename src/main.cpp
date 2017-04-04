@@ -5,7 +5,11 @@
  * These GLOBAL matrices are sparse matrices. Hence we would need to assemble a PETSc sparse matrix using the previously computed local matrices. 
  */
 #include "petsc.h"
+#include <string>
 #include "../includes/Utilities/LobattoNodes.h"
+#include "../includes/Utilities/MassMatrix.h"
+
+using namespace std;
 
 static char help[] = "Hello World Program\n\n";
 
@@ -84,6 +88,36 @@ void initial_conditions(Vec x, Vec y, Vec u, Vec v, Vec q, PetscInt ne_x, PetscI
     return ;
 }
 
+void createGlobalMatrix(Mat global, PetscInt ne_x, PetscInt ne_y, PetscInt n, string matrixType) {
+    // Declaring the iterators
+    PetscInt i, j, k;
+    PetscInt   *idxm = new PetscInt[(n+1)*(n+1)];
+    PetscInt   *idxn = new PetscInt[(n+1)*(n+1)];
+
+    // Allocating space for the local Matrix.
+    PetscReal   *loc = new PetscReal[(n+1)*(n+1)*(n+1)*(n+1)];
+    if(matrixType == "Mass") {
+        twoDMassMatrix(loc, n);
+    }
+    else {
+         PetscPrintf(PETSC_COMM_SELF, "Did not find such local matrix.\n");
+    }
+
+    for(j=0; j<ne_y; j++) {
+        for(i=0; i<ne_x; i++) {
+            for(k=0; k<(n+1)*(n+1); k++) {
+                idxm[k] = (j*ne_x + i)*(n+1)*(n+1) + k;
+                idxn[k] = (j*ne_x + i)*(n+1)*(n+1) + k;
+            }
+            MatSetValues(global, (n+1)*(n+1), idxm, (n+1)*(n+1), idxn, loc, INSERT_VALUES);
+        }
+    }
+    MatAssemblyBegin(global, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(global, MAT_FINAL_ASSEMBLY);
+
+    return ;
+}
+
 int main(int argc, char *argv[])
 {   
     /// Constants that define the problem.
@@ -92,10 +126,14 @@ int main(int argc, char *argv[])
 
     /// Setting other constants
     PetscInt n_p = (n+1)*(n+1)*ne_x*ne_y;
+
     /// Setting the domain.
-    PetscReal x1, y1, x2, y2;
+    PetscReal x1, y1, x2, y2, dx, dy;
     x1 = y1 = -1.0;
     x2 = y2 =  1.0;
+    dx = (x2-x1)/ne_x;
+    dy = (y2-y1)/ne_y;
+
 
     /// Declaring the vectors
     Vec     x, y;
@@ -103,8 +141,12 @@ int main(int argc, char *argv[])
     Vec     q;
     Vec     q_star_x, q_star_y;
 
+    // Declaring the matrices, small letter for local, Capital for global
+    Mat M;
+
     PetscInitialize(&argc,&argv,(char*)0,help);
 
+    // Creating vectors
     VecCreateSeq(PETSC_COMM_SELF, n_p, &x);
     VecCreateSeq(PETSC_COMM_SELF, n_p, &y);
     VecCreateSeq(PETSC_COMM_SELF, n_p, &u);
@@ -112,10 +154,16 @@ int main(int argc, char *argv[])
     VecCreateSeq(PETSC_COMM_SELF, n_p, &q);
     VecCreateSeq(PETSC_COMM_SELF, n_p, &q_star_x);
     VecCreateSeq(PETSC_COMM_SELF, n_p, &q_star_y);
+    
+    // Creating matrices
+    MatCreateSeqAIJ(PETSC_COMM_SELF, n_p, n_p, (n+1)*(n+1), NULL, &M); 
 
     initial_conditions(x, y, u, v, q, ne_x, ne_y, n, x1, y1, x2, y2);
-    VecView(q, PETSC_VIEWER_STDOUT_WORLD);
+    createGlobalMatrix(M, ne_x, ne_y, n, "Mass");
+    MatScale(M, 0.25*dx*dy);
 
+
+    MatView(M, PETSC_VIEWER_STDOUT_WORLD);
 
     PetscFinalize();
     return 0;
