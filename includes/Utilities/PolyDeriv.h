@@ -1,5 +1,5 @@
 #ifndef POLYDERIV_H
 #define POLYDERIV_H
 
-void polyDeriv(double *GivenPoly, double *DerivedPoly, unsigned deg);
+void polyDeriv(double *GivenPoly, double *DerivedPoly, int deg);
 #endif

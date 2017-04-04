@@ -2,6 +2,10 @@
 #include <gsl/gsl_poly.h>
 
 void polynomialRoots(const double *Poly, double *Roots, int deg) {
+    if(deg == 1){
+        Roots[0] = -Poly[0]/Poly[1];
+        return ;
+    }
     int i;
     double* z = new double[2*deg];
     gsl_poly_complex_workspace * w = gsl_poly_complex_workspace_alloc (deg+1);

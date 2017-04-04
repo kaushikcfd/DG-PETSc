@@ -1,15 +1,11 @@
-#
-#  Makefile
-# HIL: No spaces or comments after otherwise it captures them!
+include ${PETSC_DIR}/lib/petsc/conf/variables
+include ${PETSC_DIR}/lib/petsc/conf/rules
+
 # Determine the platform
 UNAME_S := $(shell uname -s)
 
 # CC
-ifeq ($(UNAME_S),Darwin)
-  CC := clang++ -arch x86_64
-else
-  CC := g++
-endif
+CC := ${PETSC_DIR}/${PETSC_ARCH}/bin/mpicxx -Wall -Wwrite-strings -Wno-strict-aliasing -Wno-unknown-pragmas -fvisibility=hidden -g3 -std=c++11
 
 # Folders
 SRCDIR := src
@@ -17,7 +13,7 @@ BUILDDIR := build
 TARGETDIR := bin
 
 # Targets
-EXECUTABLE := NSDG
+EXECUTABLE := dg_petsc
 TARGET := $(TARGETDIR)/$(EXECUTABLE)
 
 # Final Paths
@@ -36,20 +32,11 @@ BUILDLIST := $(patsubst includes/%,$(BUILDDIR)/%,$(INCDIRS))
 
 # Shared Compiler Flags
 CFLAGS := -c
-INC := -I include $(INCLIST) -I /usr/local/include ${PETSC_DIR}/lib/petsc/conf/variables ${PETSC_DIR}/lib/petsc/conf/rules
+INC := -I include $(INCLIST) -I /usr/local/include -I ${PETSC_DIR}/include -I ${PETSC_DIR}/${PETSC_ARCH}/include
 LIB := -L /usr/local/lib -lblas -llapacke -lgsl -lgslcblas -lm ${PETSC_SYS_LIB}
 
 # Platform Specific Compiler Flags
-ifeq ($(UNAME_S),Linux)
-    CFLAGS += -std=c++11
-
-    # PostgreSQL Special
-    PG_VER := 9.3
-    INC += -I /usr/pgsql-$(PG_VER)/include
-    LIB += -L /usr/pgsql-$(PG_VER)/lib
-else
-  CFLAGS += -std=c++11 -stdlib=libc++ -O2
-endif
+CFLAGS += -std=c++11
 
 $(TARGET): $(OBJECTS)
 	@mkdir -p $(TARGETDIR)
@@ -60,7 +47,7 @@ $(BUILDDIR)/%.o: $(SRCDIR)/%.$(SRCEXT)
 	@mkdir -p $(BUILDLIST)
 	@echo "Compiling $<..."; $(CC) $(CFLAGS) $(INC) -c -o $@ $<
 
-clean:
+clean_kk:
 	@echo "Cleaning $(TARGET)..."; $(RM) -r $(BUILDDIR) $(TARGET)
 
 install:

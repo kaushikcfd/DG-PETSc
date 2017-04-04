@@ -9,16 +9,22 @@ using namespace std;
 
 void lobattoNodes(double *Nodes, unsigned N)
 {
+    if(N == 2) {
+        Nodes[0] = -1.0;
+        Nodes[1] =  1.0;
+        return ;
+    }
     double *Poly,*DerivedPoly;
     Poly        =   new double[N];
     DerivedPoly =   new double[N-1];
     legendrePolynomial(Poly,N-1);
     polyDeriv(Poly,DerivedPoly,N-1);
-	Nodes[0]   =   -1;
+	Nodes[0]   =   -1.0;
     polynomialRoots(DerivedPoly, &(Nodes[1]), N-2);
-	Nodes[N-1] =   1;
+	Nodes[N-1] =   1.0;
 	sort(Nodes,Nodes+N);
 
     delete[] Poly;
     delete[] DerivedPoly;
+    return ;
 }

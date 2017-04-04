@@ -8,7 +8,7 @@
 
 using namespace std;
 
-void lobattoWeights(double *Weights, unsigned N)
+void lobattoWeights(double *Weights, int N)
 {
     double *Poly, *Nodes;
     Poly    =   new double[N];
