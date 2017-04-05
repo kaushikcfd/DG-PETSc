@@ -6,6 +6,7 @@
  */
 #include "petsc.h"
 #include <string>
+#include <fstream>
 #include "../includes/Utilities/LobattoNodes.h"
 #include "../includes/Utilities/MassMatrix.h"
 
@@ -118,11 +119,85 @@ void createGlobalMatrix(Mat global, PetscInt ne_x, PetscInt ne_y, PetscInt n, st
     return ;
 }
 
+void writeVTK(Vec x, Vec y, Vec q, PetscInt ne_x, PetscInt ne_y, PetscInt n, string filename) {
+    PetscReal   *x_array;
+    PetscReal   *y_array;
+    PetscReal   *q_array;
+
+    VecGetArray(x, &x_array);
+    VecGetArray(y, &y_array);
+    VecGetArray(q, &q_array);
+
+    ofstream pFile;
+    pFile.open(filename);
+    
+    PetscInt i, j, k, k1, k2;
+
+    // Printing the preamble for the .vtk file.
+    pFile << "# vtk DataFile Version 3.0\nNavier Stokes DG\nASCII\nDATASET UNSTRUCTURED_GRID\n";
+    // The information of the number of points.
+    pFile << "POINTS\t" << (n+1)*(n+1)*ne_x*ne_y << "\tdouble\n";
+
+    // Writing the point co-ordinates.
+    for ( j = 0; j < ne_y; j++ )
+        for ( i = 0; i < ne_x; i++ )
+            for( k = 0; k < (n+1)*(n+1); k++ )
+                pFile << x_array[(j*ne_x + i)*(n+1)*(n+1) + k] << "\t" << y_array[(j*ne_x + i)*(n+1)*(n+1) + k] <<"\t"<< 0.0 <<endl;
+
+    pFile << "\n\n";
+
+    // Specifying the information about the CELLS.
+    pFile << "CELLS\t" << (n*n*ne_x*ne_y) <<"\t" << 5*(n*n*ne_x*ne_y) << endl;
+
+    // Writing information about the structure of the cells.
+    for ( j = 0; j < ne_y; j++ ) {
+        for ( i = 0; i < ne_x; i++ ) {
+            for( k1 = 0; k1 < n; k1++ ) {
+                for ( k2 = 0; k2 < n; k2++ ) {
+                    k   =   (j*ne_x+i)*(n+1)*(n+1) +   k1*(n+1)    +   k2;
+                    pFile << 4 << "\t" << k << "\t" << k+1 << "\t" << k+n+2 << "\t" << k+n+1 << endl;
+                }
+            }
+        }
+    }
+    pFile << "\n\n";
+
+    // Specifying the information about the CELL TYPES.
+    pFile << "CELL_TYPES " << (n*n*ne_x*ne_y) << endl;
+
+    // `9` is the CELL TYPE CODE for specifying that it is a quad.
+    for ( i = 0; i < (n*n*ne_x*ne_y); i++)
+        pFile << "9\n";
+    pFile << "\n\n";
+
+    // Specifying the information about the values of the scalars.
+    
+    pFile << "POINT_DATA\t"<< (n+1)*(n+1)*ne_x*ne_y <<"\n";
+        
+    pFile << "SCALARS\tQ\tdouble\nLOOKUP_TABLE default\n";
+        
+    // Writing the value of the POINT_DATA, for the variable[variableNames[k1]] 
+    for ( j = 0; j < ne_y; j++ ){
+        for ( i = 0; i < ne_x; i++ ) {
+            for( k = 0; k < (n+1)*(n+1); k++ ) {
+                pFile << q_array[(j*ne_x + i)*(n+1)*(n+1) + k] << endl;
+            }
+        }
+    }
+
+    VecRestoreArray(x, &x_array);
+    VecRestoreArray(y, &y_array);
+    VecRestoreArray(q, &q_array);
+    
+    pFile.close(); // Closing the file.
+    return ;
+}
+
 int main(int argc, char *argv[])
 {   
     /// Constants that define the problem.
-    PetscInt ne_x = 2, ne_y = 2;   /// Number of elements in the x and y direction resp.
-    PetscInt n = 1;                  /// The order of interpolation
+    PetscInt ne_x = 10, ne_y = 10;   /// Number of elements in the x and y direction resp.
+    PetscInt n = 4;                  /// The order of interpolation
 
     /// Setting other constants
     PetscInt n_p = (n+1)*(n+1)*ne_x*ne_y;
@@ -158,12 +233,15 @@ int main(int argc, char *argv[])
     // Creating matrices
     MatCreateSeqAIJ(PETSC_COMM_SELF, n_p, n_p, (n+1)*(n+1), NULL, &M); 
 
+    // Providing initial conditions.
     initial_conditions(x, y, u, v, q, ne_x, ne_y, n, x1, y1, x2, y2);
+    
+    // Creating Global matrices
     createGlobalMatrix(M, ne_x, ne_y, n, "Mass");
     MatScale(M, 0.25*dx*dy);
 
 
-    MatView(M, PETSC_VIEWER_STDOUT_WORLD);
+    writeVTK(x, y, q, ne_x, ne_y, n, "initial_conditions.vtk");
 
     PetscFinalize();
     return 0;
