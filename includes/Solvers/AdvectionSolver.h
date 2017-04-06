@@ -12,19 +12,33 @@ private:
     PetscReal time;
     PetscReal dt;
     PetscInt no_of_time_steps;
+    string boundaryType;
 
     /// Declaring the vectors
     Vec     x, y;
     Vec     u, v;
     Vec     q, f_x, f_y;
     Vec     f_star_x, f_star_y;
-    Vec     k1, k2, k3;
-    Vec     dummy, rhs;
 
     // Declaring the matrices, small letter for local, Capital for global
     Mat M_inv, D_x, D_y, F_right, F_top, F_left, F_bottom, D_trans_x, D_trans_y;
 
-    string boundaryType;
+    /// Private functions
+    /* ----------------------------------------------------------------------------*/
+    /**
+     * @Synopsis  This function computes the numeical flux from the fluxes at the edges and updates the vectors f_star_x, f_star_y accordingly.
+     */
+    /* ----------------------------------------------------------------------------*/
+    void updateNumericalFlux();
+    /* ----------------------------------------------------------------------------*/
+    /**
+     * @Synopsis This function gives a global matrix for the given matrix type
+     * 
+     * @Param global    This is the matrix whose value is to be filled
+     * @Param matrixType This string denotes what type of matrix is to be filled in the global matrix.  
+     */
+    /* ----------------------------------------------------------------------------*/
+    void createGlobalMatrix(Mat global, string matrixType);
 
 public:
     /* ----------------------------------------------------------------------------*/
@@ -62,22 +76,15 @@ public:
     void setBoundaryCondtions(string type);
     /* ----------------------------------------------------------------------------*/
     /**
-     * @Synopsis This is the function used to initialize the the veclocity of the domain  
+     * @Synopsis  This is the function used to give the initial input waveform as a function and the velocity provided.
      *
      * @Param functionU This is the function used to initialize the `U` velocity as an input.
      * @Param functionV This is the function used to initialize the `V` velocity as an input.
-     */
-    /* ----------------------------------------------------------------------------*/
-    void setVelocity(function<PetscReal(PetscReal, PetscReal)>U, function<PetscReal(PetscReal, PetscReal)>V);
-    /* ----------------------------------------------------------------------------*/
-    /**
-     * @Synopsis  This is the function used to give the initial input waveform as a function.
-     *
-     * @Param I The input function which is used to initialize the waveform. The function takes 2 inputs x and y in
+     * @Param functionI The input function which is used to initialize the waveform. The function takes 2 inputs x and y in
      * order.
      */
     /* ----------------------------------------------------------------------------*/
-    void setInitialConditions(function<PetscReal(PetscReal, PetscReal)> I);
+    void setInitialConditions(function<PetscReal(PetscReal, PetscReal)>U, function<PetscReal(PetscReal, PetscReal)>V, function<PetscReal(PetscReal, PetscReal)> I);
     /* ----------------------------------------------------------------------------*/
     /**
      * @Synopsis   This function is used to set important solver parameters like dt, and no. of time steps.
@@ -104,6 +111,12 @@ public:
      */
     /* ----------------------------------------------------------------------------*/
     void plot(string filename);
+    /* ----------------------------------------------------------------------------*/
+    /**
+     * @Synopsis  Destructor. Frees the memory
+     */
+    /* ----------------------------------------------------------------------------*/
+    ~AdvectionSolver();
 
 };
 
