@@ -121,6 +121,7 @@ void createGlobalMatrix(Mat global, PetscInt ne_x, PetscInt ne_y, PetscInt n, st
         PetscReal   *massMatrix = new PetscReal[(n+1)*(n+1)*(n+1)*(n+1)];
         twoDMassMatrix(massMatrix, n);
         inverse(massMatrix,loc,(n+1)*(n+1));
+        delete[] massMatrix;
     }
     else if(matrixType == "Derivative_x") {
         twoDDerivativeMatrixX(loc, n);
@@ -155,6 +156,9 @@ void createGlobalMatrix(Mat global, PetscInt ne_x, PetscInt ne_y, PetscInt n, st
     }
     MatAssemblyBegin(global, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(global, MAT_FINAL_ASSEMBLY);
+
+    delete[] idxm;
+    delete[] idxn;
 
     return ;
 }
@@ -401,7 +405,7 @@ int main(int argc, char *argv[])
     /// Constants that define the problem.
     PetscInt ne_x = 10, ne_y = 10;   /// Number of elements in the x and y direction resp.
     PetscInt n = 4;                  /// The order of interpolation
-    PetscInt n_time = 200;
+    PetscInt n_time = 100;
     PetscReal dt = 1e-2;
 
     /// Setting other constants
@@ -575,7 +579,34 @@ int main(int argc, char *argv[])
         VecAXPY(q,  (1.0/6.0)*dt, k3);
     }
 
-    writeVTK(x, y, q, ne_x, ne_y, n, "danda.vtk");
+    writeVTK(x, y, q, ne_x, ne_y, n, "output.vtk");
+
+    /// Freeing the space by destroying the vectors
+    VecDestroy(&x);
+    VecDestroy(&y);
+    VecDestroy(&u);
+    VecDestroy(&v);
+    VecDestroy(&q);
+    VecDestroy(&f_x);
+    VecDestroy(&f_y);
+    VecDestroy(&f_star_x);
+    VecDestroy(&f_star_y);
+    VecDestroy(&k1);
+    VecDestroy(&k2);
+    VecDestroy(&k3);
+    VecDestroy(&dummy);
+    VecDestroy(&rhs);
+
+    /// Freeing the space by destroying the matrices
+    MatDestroy(&M_inv);
+    MatDestroy(&D_x);
+    MatDestroy(&D_y);
+    MatDestroy(&F_right);
+    MatDestroy(&F_top);
+    MatDestroy(&F_left);
+    MatDestroy(&F_bottom);
+    MatDestroy(&D_trans_x);
+    MatDestroy(&D_trans_y);
 
     PetscFinalize();
     return 0;
