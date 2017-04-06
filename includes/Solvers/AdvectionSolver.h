@@ -113,10 +113,10 @@ public:
     void plot(string filename);
     /* ----------------------------------------------------------------------------*/
     /**
-     * @Synopsis  Destructor. Frees the memory
+     * @Synopsis  Frees the memory
      */
     /* ----------------------------------------------------------------------------*/
-    ~AdvectionSolver();
+    void destroy();
 
 };
 

@@ -559,7 +559,7 @@ void AdvectionSolver::plot(string filename) {
     return ;
 }
 
-AdvectionSolver::~AdvectionSolver() {
+void AdvectionSolver::destroy() {
     /// Freeing the space by destroying the vectors
     VecDestroy(&x);
     VecDestroy(&y);
