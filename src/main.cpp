@@ -7,10 +7,14 @@
 #include "petsc.h"
 #include <string>
 #include <fstream>
+#include <cmath>
 #include "../includes/Utilities/LobattoNodes.h"
 #include "../includes/Utilities/MassMatrix.h"
 #include "../includes/Utilities/DerivativeMatrix.h"
 #include "../includes/Utilities/FluxMatrix.h"
+#include "../includes/Utilities/Inverse.h"
+
+#define MAX_ABS(a, b)(fabs(a)>fabs(b)?fabs(a):fabs(b))
 
 using namespace std;
 
@@ -112,6 +116,11 @@ void createGlobalMatrix(Mat global, PetscInt ne_x, PetscInt ne_y, PetscInt n, st
     PetscReal   *loc = new PetscReal[(n+1)*(n+1)*(n+1)*(n+1)];
     if(matrixType == "Mass") {
         twoDMassMatrix(loc, n);
+    }
+    else if(matrixType == "Mass_Inverse") {
+        PetscReal   *massMatrix = new PetscReal[(n+1)*(n+1)*(n+1)*(n+1)];
+        twoDMassMatrix(massMatrix, n);
+        inverse(massMatrix,loc,(n+1)*(n+1));
     }
     else if(matrixType == "Derivative_x") {
         twoDDerivativeMatrixX(loc, n);
@@ -224,7 +233,166 @@ void writeVTK(Vec x, Vec y, Vec q, PetscInt ne_x, PetscInt ne_y, PetscInt n, str
     return ;
 }
 
-void updateNumericalFlux() {
+void updateNumericalFlux(Vec f_x, Vec f_y, Vec f_star_x, Vec f_star_y, Vec u, Vec v, PetscInt ne_x, PetscInt ne_y, PetscInt n) {
+    
+    PetscInt i, j, k1, k2, node_index, neighbor_index;
+    PetscReal lambda ;
+    PetscReal   *f_x_array;
+    PetscReal   *f_y_array;
+    PetscReal   *f_star_x_array;
+    PetscReal   *f_star_y_array;
+    PetscReal   *u_array;
+    PetscReal   *v_array;
+
+    VecGetArray(f_x, &f_x_array);
+    VecGetArray(f_y, &f_y_array);
+    VecGetArray(f_star_x, &f_star_x_array);
+    VecGetArray(f_star_y, &f_star_y_array);
+    VecGetArray(u, &u_array);
+    VecGetArray(v, &v_array);
+    
+    /// For the bottom face, internal elements. Ignoring the bottomost elements case as it will be boundary
+    /// k2=0, j=[1:ne_y-1], i=[0:ne_x-1], k1 = [0, n]
+    for(j=1; j<ne_y; j++) {
+        for(i=0; i<ne_x; i++) {
+            for(k1=0; k1<=n; k1++) {
+                node_index      = (j*ne_x + i)*(n+1)*(n+1) + k1;
+                neighbor_index  = ((j-1)*ne_x + i)*(n+1)*(n+1) + (n*(n+1)+k1);
+                lambda = MAX_ABS(v_array[neighbor_index],v_array[node_index]);
+                f_star_y_array[node_index] = 0.5*(
+                                                f_y_array[node_index]
+                                                +f_y_array[neighbor_index]
+                                                -lambda*(f_y_array[node_index]
+                                                        -f_y_array[neighbor_index])
+                                                );
+            }
+        }
+    }
+
+    /// For the top face, internal elements. Ignoring the topmost elements case as it will be boundary
+    /// k2=n, j=[0:ne_y-2], i=[0:ne_x-1], k1 = [0, n]
+    for(j=0; j<ne_y-1; j++) {
+        for(i=0; i<ne_x; i++) {
+            for(k1=0; k1<=n; k1++) {
+                node_index      = (j*ne_x + i)*(n+1)*(n+1) + (n*(n+1)+k1);
+                neighbor_index  = ((j+1)*ne_x + i)*(n+1)*(n+1) + k1;
+                lambda = MAX_ABS(v_array[neighbor_index],v_array[node_index]);
+                f_star_y_array[node_index] = 0.5*(
+                                                f_y_array[node_index]
+                                                +f_y_array[neighbor_index]
+                                                +lambda*(f_y_array[node_index]
+                                                        -f_y_array[neighbor_index])
+                                                );
+            }
+        }
+    }
+
+    /// For the left face, internal elements. Ignoring the leftmost elements case as it will be boundary
+    /// j=[0:ne_y-1], i=[1:ne_x-1], k2 = [0, n], k1=0
+    for(j=0; j<ne_y; j++) {
+        for(i=1; i<ne_x; i++) {
+            for(k2=0; k2<=n; k2++) {
+                node_index      = (j*ne_x + i)*(n+1)*(n+1) + (k2*(n+1));
+                neighbor_index  = (j*ne_x + i-1)*(n+1)*(n+1) + (k2*(n+1)+n);
+                lambda = MAX_ABS(u_array[neighbor_index],u_array[node_index]);
+                f_star_x_array[node_index] = 0.5*(
+                                                f_x_array[node_index]
+                                                +f_x_array[neighbor_index]
+                                                -lambda*(f_x_array[node_index]
+                                                        -f_x_array[neighbor_index])
+                                                );
+            }
+        }
+    }
+
+    /// For the right face, internal elements. Ignoring the rightmost elements case as it will be boundary
+    /// j=[0:ne_y-1], i=[0:ne_x-2], k2 = [0, n], k1=n
+    for(j=0; j<ne_y; j++) {
+        for(i=0; i<ne_x-1; i++) {
+            for(k2=0; k2<=n; k2++) {
+                node_index      = (j*ne_x + i)*(n+1)*(n+1) + (k2*(n+1)+n);
+                neighbor_index  = (j*ne_x + i+1)*(n+1)*(n+1) + (k2*(n+1));
+                lambda = MAX_ABS(u_array[neighbor_index],u_array[node_index]);
+                f_star_x_array[node_index] = 0.5*(
+                                                f_x_array[node_index]
+                                                +f_x_array[neighbor_index]
+                                                +lambda*(f_x_array[node_index]
+                                                        -f_x_array[neighbor_index])
+                                                );
+            }
+        }
+    }
+
+    /// Imposing periodic boundary conditions.
+    /// Handling the bottom boundary
+    for(i = 0; i<ne_x; i++){
+        for(k1 = 0; k1<=n; k1++){
+            node_index      = i*(n+1)*(n+1) + k1;
+            neighbor_index  = ((ne_y-1)*ne_x + i)*(n+1)*(n+1) + (n*(n+1)+k1);
+            lambda = MAX_ABS(v_array[neighbor_index],v_array[node_index]);
+            f_star_y_array[node_index] = 0.5*(
+                                            f_y_array[node_index]
+                                            +f_y_array[neighbor_index]
+                                            -lambda*(f_y_array[node_index]
+                                                    -f_y_array[neighbor_index])
+                                            );
+        }
+    }
+
+    /// Handling the top boundary
+    for(i = 0; i<ne_x; i++){
+        for(k1 = 0; k1<=n; k1++){
+            node_index      = ((ne_y-1)*ne_x + i)*(n+1)*(n+1) + (n*(n+1)+k1);
+            neighbor_index  = i*(n+1)*(n+1) + k1;
+            lambda = MAX_ABS(v_array[neighbor_index],v_array[node_index]);
+            f_star_y_array[node_index] = 0.5*(
+                                            f_y_array[node_index]
+                                            +f_y_array[neighbor_index]
+                                            +lambda*(f_y_array[node_index]
+                                                    -f_y_array[neighbor_index])
+                                            );
+        }
+    }
+
+    /// Handling the left boundary
+    for (j=0; j<ne_y; j++) {
+        for(k2=0; k2<=n; k2++) {
+            node_index      =  j*ne_x*(n+1)*(n+1) + k2*(n+1);
+            neighbor_index  = (j*ne_x + ne_x-1)*(n+1)*(n+1) + (k2*(n+1)+n);
+            lambda = MAX_ABS(u_array[neighbor_index],u_array[node_index]);
+            f_star_x_array[node_index] = 0.5*(
+                                            f_x_array[node_index]
+                                            +f_x_array[neighbor_index]
+                                            -lambda*(f_x_array[node_index]
+                                                    -f_x_array[neighbor_index])
+                                            );
+        }
+    }
+
+    /// Handling the right boundary
+    for (j=0; j<ne_y; j++) {
+        for(k2=0; k2<=n; k2++) {
+            node_index      = (j*ne_x + ne_x-1)*(n+1)*(n+1) + (k2*(n+1)+n);
+            neighbor_index  =  j*ne_x*(n+1)*(n+1) + k2*(n+1);
+            lambda = MAX_ABS(u_array[neighbor_index],u_array[node_index]);
+            f_star_x_array[node_index] = 0.5*(
+                                            f_x_array[node_index]
+                                            +f_x_array[neighbor_index]
+                                            +lambda*(f_x_array[node_index]
+                                                    -f_x_array[neighbor_index])
+                                            );
+            
+        }
+    }
+
+    VecRestoreArray(f_x, &f_x_array);
+    VecRestoreArray(f_y, &f_y_array);
+    VecRestoreArray(f_star_x, &f_star_x_array);
+    VecRestoreArray(f_star_y, &f_star_y_array);
+    VecRestoreArray(u, &u_array);
+    VecRestoreArray(v, &v_array);
+
+    return ;
 
 }
 
@@ -233,6 +401,8 @@ int main(int argc, char *argv[])
     /// Constants that define the problem.
     PetscInt ne_x = 10, ne_y = 10;   /// Number of elements in the x and y direction resp.
     PetscInt n = 4;                  /// The order of interpolation
+    PetscInt n_time = 200;
+    PetscReal dt = 1e-2;
 
     /// Setting other constants
     PetscInt n_p = (n+1)*(n+1)*ne_x*ne_y;
@@ -249,10 +419,12 @@ int main(int argc, char *argv[])
     Vec     x, y;
     Vec     u, v;
     Vec     q, f_x, f_y;
-    Vec     q_star_x, q_star_y;
+    Vec     f_star_x, f_star_y;
+    Vec     k1, k2, k3;
+    Vec     dummy, rhs;
 
     // Declaring the matrices, small letter for local, Capital for global
-    Mat M, D_x, D_y, F_right, F_top, F_left, F_bottom;
+    Mat M_inv, D_x, D_y, F_right, F_top, F_left, F_bottom, D_trans_x, D_trans_y;
 
     PetscInitialize(&argc,&argv,(char*)0,help);
 
@@ -264,11 +436,18 @@ int main(int argc, char *argv[])
     VecCreateSeq(PETSC_COMM_SELF, n_p, &q);
     VecCreateSeq(PETSC_COMM_SELF, n_p, &f_x);
     VecCreateSeq(PETSC_COMM_SELF, n_p, &f_y);
-    VecCreateSeq(PETSC_COMM_SELF, n_p, &q_star_x);
-    VecCreateSeq(PETSC_COMM_SELF, n_p, &q_star_y);
+    VecCreateSeq(PETSC_COMM_SELF, n_p, &f_star_x);
+    VecCreateSeq(PETSC_COMM_SELF, n_p, &f_star_y);
+    VecCreateSeq(PETSC_COMM_SELF, n_p, &k1);
+    VecCreateSeq(PETSC_COMM_SELF, n_p, &k2);
+    VecCreateSeq(PETSC_COMM_SELF, n_p, &k3);
+    VecCreateSeq(PETSC_COMM_SELF, n_p, &rhs);
+    VecCreateSeq(PETSC_COMM_SELF, n_p, &dummy);
     
     // Creating matrices
-    MatCreateSeqAIJ(PETSC_COMM_SELF, n_p, n_p, (n+1)*(n+1), NULL, &M);
+    MatCreateSeqAIJ(PETSC_COMM_SELF, n_p, n_p, (n+1)*(n+1), NULL, &M_inv);
+    MatCreateSeqAIJ(PETSC_COMM_SELF, n_p, n_p, (n+1)*(n+1), NULL, &D_trans_x);
+    MatCreateSeqAIJ(PETSC_COMM_SELF, n_p, n_p, (n+1)*(n+1), NULL, &D_trans_y);
     MatCreateSeqAIJ(PETSC_COMM_SELF, n_p, n_p, (n+1)*(n+1), NULL, &D_x);
     MatCreateSeqAIJ(PETSC_COMM_SELF, n_p, n_p, (n+1)*(n+1), NULL, &D_y);
     MatCreateSeqAIJ(PETSC_COMM_SELF, n_p, n_p, (n+1)*(n+1), NULL, &F_right);
@@ -280,29 +459,123 @@ int main(int argc, char *argv[])
     initial_conditions(x, y, u, v, q, f_x, f_y, ne_x, ne_y, n, x1, y1, x2, y2);
     
     // Creating Global matrices
-    createGlobalMatrix(M, ne_x, ne_y, n, "Mass");
-    createGlobalMatrix(D_x, ne_x, ne_y, n, "Derivative_x");
-    createGlobalMatrix(D_y, ne_x, ne_y, n, "Derivative_y");
+    createGlobalMatrix(M_inv, ne_x, ne_y, n, "Mass_Inverse");
+    createGlobalMatrix(D_trans_x, ne_x, ne_y, n, "Derivative_x");
+    createGlobalMatrix(D_trans_y, ne_x, ne_y, n, "Derivative_y");
     createGlobalMatrix(F_right, ne_x, ne_y, n, "Flux_right");
     createGlobalMatrix(F_top, ne_x, ne_y, n, "Flux_top");
     createGlobalMatrix(F_left, ne_x, ne_y, n, "Flux_left");
     createGlobalMatrix(F_bottom, ne_x, ne_y, n, "Flux_bottom");
 
     // Multiplying with Jacobians
-    MatScale(M, 0.25*dx*dy);
-    MatScale(D_x, 0.5*dy);
-    MatScale(D_y, 0.5*dx);
+    MatScale(M_inv, 4.0/(dx*dy));
+    MatScale(D_trans_x, 0.5*dy);
+    MatScale(D_trans_y, 0.5*dx);
     MatScale(F_right, 0.5*dy);
     MatScale(F_left, 0.5*dy);
     MatScale(F_top, 0.5*dx);
     MatScale(F_bottom, 0.5*dx);
 
     // Transposing the derivative matrices
-    MatTranspose(D_x, MAT_REUSE_MATRIX,&D_x);
-    MatTranspose(D_y, MAT_REUSE_MATRIX,&D_y);
+    MatTranspose(D_trans_x, MAT_INITIAL_MATRIX, &D_x);
+    MatTranspose(D_trans_y, MAT_INITIAL_MATRIX, &D_y);
 
-    // Writing the initial conditions
-    writeVTK(x, y, q, ne_x, ne_y, n, "initial_conditions.vtk");
+    // Starting the time-stepping
+    for(PetscInt i=0; i<n_time; i++) {
+
+        /// First Step for RK3:
+        VecSet(rhs, 0.0);
+
+        VecPointwiseMult(f_x, u, q);
+        VecPointwiseMult(f_y, v, q);
+
+        updateNumericalFlux(f_x, f_y, f_star_x, f_star_y, u, v, ne_x, ne_y, n);
+
+        MatMult(D_x, f_x, dummy);
+        VecAXPY(rhs, 1.0, dummy);
+
+        MatMult(D_y, f_y, dummy);
+        VecAXPY(rhs, 1.0, dummy);
+
+        MatMult(F_right, f_star_x, dummy);
+        VecAXPY(rhs, -1.0, dummy);
+
+        MatMult(F_left, f_star_x, dummy);
+        VecAXPY(rhs, 1.0, dummy);
+
+        MatMult(F_top, f_star_y, dummy);
+        VecAXPY(rhs, -1.0, dummy);
+
+        MatMult(F_bottom, f_star_y, dummy);
+        VecAXPY(rhs, 1.0, dummy);
+
+        MatMult(M_inv, rhs, k1);
+        VecAXPY(q, 0.5*dt, k1);
+
+        /// Second Step for RK3:
+        VecSet(rhs, 0.0);
+
+
+        VecPointwiseMult(f_x, u, q);
+        VecPointwiseMult(f_y, v, q);
+
+        updateNumericalFlux(f_x, f_y, f_star_x, f_star_y, u, v, ne_x, ne_y, n);
+
+        MatMult(D_x, f_x, dummy);
+        VecAXPY(rhs, 1.0, dummy);
+
+        MatMult(D_y, f_y, dummy);
+        VecAXPY(rhs, 1.0, dummy);
+
+        MatMult(F_right, f_star_x, dummy);
+        VecAXPY(rhs, -1.0, dummy);
+
+        MatMult(F_left, f_star_x, dummy);
+        VecAXPY(rhs, 1.0, dummy);
+
+        MatMult(F_top, f_star_y, dummy);
+        VecAXPY(rhs, -1.0, dummy);
+
+        MatMult(F_bottom, f_star_y, dummy);
+        VecAXPY(rhs, 1.0, dummy);
+
+        MatMult(M_inv, rhs, k2);
+        VecAXPY(q, -1.5*dt, k1);
+        VecAXPY(q,  2.0*dt, k2);
+
+        /// Third Step for RK3:
+        VecSet(rhs, 0.0);
+
+        VecPointwiseMult(f_x, u, q);
+        VecPointwiseMult(f_y, v, q);
+
+        updateNumericalFlux(f_x, f_y, f_star_x, f_star_y, u, v, ne_x, ne_y, n);
+
+        MatMult(D_x, f_x, dummy);
+        VecAXPY(rhs, 1.0, dummy);
+
+        MatMult(D_y, f_y, dummy);
+        VecAXPY(rhs, 1.0, dummy);
+
+        MatMult(F_right, f_star_x, dummy);
+        VecAXPY(rhs, -1.0, dummy);
+
+        MatMult(F_left, f_star_x, dummy);
+        VecAXPY(rhs, 1.0, dummy);
+
+        MatMult(F_top, f_star_y, dummy);
+        VecAXPY(rhs, -1.0, dummy);
+
+        MatMult(F_bottom, f_star_y, dummy);
+        VecAXPY(rhs, 1.0, dummy);
+
+        MatMult(M_inv, rhs, k3);
+        VecAXPY(q,  (7.0/6.0)*dt, k1);
+        VecAXPY(q, -(4.0/3.0)*dt, k2);
+        VecAXPY(q,  (1.0/6.0)*dt, k3);
+    }
+
+    writeVTK(x, y, q, ne_x, ne_y, n, "danda.vtk");
 
     PetscFinalize();
     return 0;
